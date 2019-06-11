@@ -60,7 +60,7 @@ var _ = Describe("Multus", func() {
 	defaultInterface := v1.Interface{
 		Name: "default",
 		InterfaceBindingMethod: v1.InterfaceBindingMethod{
-			Masquerade: &v1.InterfaceMasquerade{},
+			Bridge: &v1.InterfaceBridge{},
 		},
 	}
 

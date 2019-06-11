@@ -76,15 +76,12 @@ import (
 	virtconfig "kubevirt.io/kubevirt/pkg/virt-config"
 	"kubevirt.io/kubevirt/pkg/virt-controller/services"
 	launcherApi "kubevirt.io/kubevirt/pkg/virt-launcher/virtwrap/api"
-	"kubevirt.io/kubevirt/pkg/virt-operator/util"
 	"kubevirt.io/kubevirt/pkg/virtctl"
 	vmsgen "kubevirt.io/kubevirt/tools/vms-generator/utils"
 )
 
-var KubeVirtUtilityVersionTag = ""
 var KubeVirtVersionTag = "latest"
 var KubeVirtVersionTagAlt = ""
-var KubeVirtUtilityRepoPrefix = ""
 var KubeVirtRepoPrefix = "kubevirt"
 var ContainerizedDataImporterNamespace = "cdi"
 var KubeVirtKubectlPath = ""
@@ -96,10 +93,8 @@ var DeployTestingInfrastructureFlag = false
 var PathToTestingInfrastrucureManifests = ""
 
 func init() {
-	flag.StringVar(&KubeVirtUtilityVersionTag, "utility-container-tag", "", "Set the image tag or digest to use")
 	flag.StringVar(&KubeVirtVersionTag, "container-tag", "latest", "Set the image tag or digest to use")
 	flag.StringVar(&KubeVirtVersionTagAlt, "container-tag-alt", "", "An alternate tag that can be used to test operator deployments")
-	flag.StringVar(&KubeVirtUtilityRepoPrefix, "utility-container-prefix", "", "Set the repository prefix for all images")
 	flag.StringVar(&KubeVirtRepoPrefix, "container-prefix", "kubevirt", "Set the repository prefix for all images")
 	flag.StringVar(&ContainerizedDataImporterNamespace, "cdi-namespace", "cdi", "Set the repository prefix for CDI components")
 	flag.StringVar(&KubeVirtKubectlPath, "kubectl-path", "", "Set path to kubectl binary")
@@ -108,15 +103,6 @@ func init() {
 	flag.StringVar(&KubeVirtInstallNamespace, "installed-namespace", "kubevirt", "Set the namespace KubeVirt is installed in")
 	flag.BoolVar(&DeployTestingInfrastructureFlag, "deploy-testing-infra", false, "Deploy testing infrastructure if set")
 	flag.StringVar(&PathToTestingInfrastrucureManifests, "path-to-testing-infra-manifests", "manifests/testing", "Set path to testing infrastructure manifests")
-
-	// When the flags are not provided, copy the values from normal version tag and prefix
-	if KubeVirtUtilityVersionTag == "" {
-		KubeVirtUtilityVersionTag = KubeVirtVersionTag
-	}
-
-	if KubeVirtUtilityRepoPrefix == "" {
-		KubeVirtUtilityRepoPrefix = KubeVirtRepoPrefix
-	}
 }
 
 type EventType string
@@ -852,13 +838,24 @@ func IsOpenShift() bool {
 	virtClient, err := kubecli.GetKubevirtClient()
 	PanicOnError(err)
 
-	isOpenShift, err := util.IsOnOpenshift(virtClient)
-	if err != nil {
-		fmt.Printf("ERROR: Can not determine cluster type %v\n", err)
-		panic(err)
-	}
+	result := virtClient.RestClient().Get().AbsPath("/version/openshift").Do()
 
-	return isOpenShift
+	var statusCode int
+	result.StatusCode(&statusCode)
+
+	if result.Error() == nil {
+		// It is OpenShift
+		if statusCode == http.StatusOK {
+			return true
+		}
+	} else {
+		// Got 404 so this is not Openshift
+		if statusCode == http.StatusNotFound {
+			return false
+		}
+	}
+	fmt.Printf(fmt.Sprintf("ERROR: Can not determine cluster type %#v\n", result))
+	panic(err)
 }
 
 func composeResourceURI(object unstructured.Unstructured) string {
@@ -1307,12 +1304,6 @@ func cleanNamespaces() {
 		// Remove all Pods
 		PanicOnError(virtCli.CoreV1().RESTClient().Delete().Namespace(namespace).Resource("pods").Do().Error())
 
-		// Remove all Services
-		svcList, err := virtCli.CoreV1().Services(namespace).List(metav1.ListOptions{})
-		for _, svc := range svcList.Items {
-			PanicOnError(virtCli.CoreV1().Services(namespace).Delete(svc.Name, &metav1.DeleteOptions{}))
-		}
-
 		// Remove all VirtualMachineInstance Secrets
 		labelSelector := fmt.Sprintf("%s", SecretLabel)
 		PanicOnError(
@@ -1433,15 +1424,6 @@ func NewRandomVMIWithNS(namespace string) *v1.VirtualMachineInstance {
 
 	t := defaultTestGracePeriod
 	vmi.Spec.TerminationGracePeriodSeconds = &t
-
-	// To avoid mac address issue in the tests change the pod interface binding to masquerade
-	// https://github.com/kubevirt/kubevirt/issues/1494
-	vmi.Spec.Domain.Devices = v1.Devices{Interfaces: []v1.Interface{{Name: "default",
-		InterfaceBindingMethod: v1.InterfaceBindingMethod{
-			Masquerade: &v1.InterfaceMasquerade{}}}}}
-
-	vmi.Spec.Networks = []v1.Network{*v1.DefaultPodNetwork()}
-
 	return vmi
 }
 
@@ -1498,13 +1480,6 @@ func NewRandomVMIWithEphemeralDiskHighMemory(containerImage string) *v1.VirtualM
 
 func NewRandomVMIWithEphemeralDiskAndUserdataHighMemory(containerImage string, userData string) *v1.VirtualMachineInstance {
 	vmi := NewRandomVMIWithEphemeralDiskAndUserdata(containerImage, userData)
-
-	vmi.Spec.Domain.Resources.Requests[k8sv1.ResourceMemory] = resource.MustParse("512M")
-	return vmi
-}
-
-func NewRandomVMIWithEphemeralDiskAndConfigDriveUserdataHighMemory(containerImage string, userData string) *v1.VirtualMachineInstance {
-	vmi := NewRandomVMIWithEphemeralDiskAndConfigDriveUserdata(containerImage, userData)
 
 	vmi.Spec.Domain.Resources.Requests[k8sv1.ResourceMemory] = resource.MustParse("512M")
 	return vmi
@@ -1647,61 +1622,13 @@ func NewRandomVMIWithEphemeralDiskAndUserdata(containerImage string, userData st
 	return vmi
 }
 
-func NewRandomVMIWithEphemeralDiskAndConfigDriveUserdata(containerImage string, userData string) *v1.VirtualMachineInstance {
-	vmi := NewRandomVMIWithEphemeralDisk(containerImage)
-	AddCloudInitConfigDriveData(vmi, "disk1", userData, "", false)
-	return vmi
-}
-
 func NewRandomVMIWithEphemeralDiskAndUserdataNetworkData(containerImage, userData, networkData string, b64encode bool) *v1.VirtualMachineInstance {
 	vmi := NewRandomVMIWithEphemeralDisk(containerImage)
-	AddCloudInitNoCloudData(vmi, "disk1", userData, networkData, b64encode)
-	return vmi
-}
-
-func NewRandomVMIWithEphemeralDiskAndConfigDriveUserdataNetworkData(containerImage, userData, networkData string, b64encode bool) *v1.VirtualMachineInstance {
-	vmi := NewRandomVMIWithEphemeralDisk(containerImage)
-	AddCloudInitConfigDriveData(vmi, "disk1", userData, networkData, b64encode)
+	AddCloudInitData(vmi, "disk1", userData, networkData, b64encode)
 	return vmi
 }
 
 func AddUserData(vmi *v1.VirtualMachineInstance, name string, userData string) {
-	AddCloudInitNoCloudData(vmi, name, userData, "", true)
-}
-
-func AddCloudInitNoCloudData(vmi *v1.VirtualMachineInstance, name, userData, networkData string, b64encode bool) {
-	cloudInitNoCloudSource := v1.CloudInitNoCloudSource{}
-	if b64encode {
-		cloudInitNoCloudSource.UserDataBase64 = base64.StdEncoding.EncodeToString([]byte(userData))
-		if networkData != "" {
-			cloudInitNoCloudSource.NetworkDataBase64 = base64.StdEncoding.EncodeToString([]byte(networkData))
-		}
-	} else {
-		cloudInitNoCloudSource.UserData = userData
-		if networkData != "" {
-			cloudInitNoCloudSource.NetworkData = networkData
-		}
-	}
-	addCloudInitDiskAndVolume(vmi, name, v1.VolumeSource{CloudInitNoCloud: &cloudInitNoCloudSource})
-}
-
-func AddCloudInitConfigDriveData(vmi *v1.VirtualMachineInstance, name, userData, networkData string, b64encode bool) {
-	cloudInitConfigDriveSource := v1.CloudInitConfigDriveSource{}
-	if b64encode {
-		cloudInitConfigDriveSource.UserDataBase64 = base64.StdEncoding.EncodeToString([]byte(userData))
-		if networkData != "" {
-			cloudInitConfigDriveSource.NetworkDataBase64 = base64.StdEncoding.EncodeToString([]byte(networkData))
-		}
-	} else {
-		cloudInitConfigDriveSource.UserData = userData
-		if networkData != "" {
-			cloudInitConfigDriveSource.NetworkData = networkData
-		}
-	}
-	addCloudInitDiskAndVolume(vmi, name, v1.VolumeSource{CloudInitConfigDrive: &cloudInitConfigDriveSource})
-}
-
-func addCloudInitDiskAndVolume(vmi *v1.VirtualMachineInstance, name string, volumeSource v1.VolumeSource) {
 	vmi.Spec.Domain.Devices.Disks = append(vmi.Spec.Domain.Devices.Disks, v1.Disk{
 		Name: name,
 		DiskDevice: v1.DiskDevice{
@@ -1711,9 +1638,45 @@ func addCloudInitDiskAndVolume(vmi *v1.VirtualMachineInstance, name string, volu
 		},
 	})
 	vmi.Spec.Volumes = append(vmi.Spec.Volumes, v1.Volume{
-		Name:         name,
-		VolumeSource: volumeSource,
+		Name: name,
+		VolumeSource: v1.VolumeSource{
+			CloudInitNoCloud: &v1.CloudInitNoCloudSource{
+				UserDataBase64: base64.StdEncoding.EncodeToString([]byte(userData)),
+			},
+		},
 	})
+}
+
+func AddCloudInitData(vmi *v1.VirtualMachineInstance, name, userData, networkData string, b64encode bool) {
+	vmi.Spec.Domain.Devices.Disks = append(vmi.Spec.Domain.Devices.Disks, v1.Disk{
+		Name: name,
+		DiskDevice: v1.DiskDevice{
+			Disk: &v1.DiskTarget{
+				Bus: "virtio",
+			},
+		},
+	})
+	if b64encode {
+		vmi.Spec.Volumes = append(vmi.Spec.Volumes, v1.Volume{
+			Name: name,
+			VolumeSource: v1.VolumeSource{
+				CloudInitNoCloud: &v1.CloudInitNoCloudSource{
+					UserDataBase64:    base64.StdEncoding.EncodeToString([]byte(userData)),
+					NetworkDataBase64: base64.StdEncoding.EncodeToString([]byte(networkData)),
+				},
+			},
+		})
+	} else {
+		vmi.Spec.Volumes = append(vmi.Spec.Volumes, v1.Volume{
+			Name: name,
+			VolumeSource: v1.VolumeSource{
+				CloudInitNoCloud: &v1.CloudInitNoCloudSource{
+					UserData:    userData,
+					NetworkData: networkData,
+				},
+			},
+		})
+	}
 }
 
 func NewRandomVMIWithPVC(claimName string) *v1.VirtualMachineInstance {
@@ -2032,9 +1995,9 @@ func NewRandomVMIWithSlirpInterfaceEphemeralDiskAndUserdata(containerImage strin
 	return vmi
 }
 
-func NewRandomVMIWithMasqueradeInterfaceEphemeralDiskAndUserdata(containerImage string, userData string, Ports []v1.Port) *v1.VirtualMachineInstance {
+func NewRandomVMIWithBridgeInterfaceEphemeralDiskAndUserdata(containerImage string, userData string, Ports []v1.Port) *v1.VirtualMachineInstance {
 	vmi := NewRandomVMIWithEphemeralDiskAndUserdata(containerImage, userData)
-	vmi.Spec.Domain.Devices.Interfaces = []v1.Interface{{Name: "default", Ports: Ports, InterfaceBindingMethod: v1.InterfaceBindingMethod{Masquerade: &v1.InterfaceMasquerade{}}}}
+	vmi.Spec.Domain.Devices.Interfaces = []v1.Interface{{Name: "default", Ports: Ports, InterfaceBindingMethod: v1.InterfaceBindingMethod{Bridge: &v1.InterfaceBridge{}}}}
 	vmi.Spec.Networks = []v1.Network{*v1.DefaultPodNetwork()}
 
 	return vmi
@@ -2234,7 +2197,7 @@ func RenderJob(name string, cmd []string, args []string) *k8sv1.Pod {
 			Containers: []k8sv1.Container{
 				{
 					Name:    name,
-					Image:   fmt.Sprintf("%s/vm-killer:%s", KubeVirtUtilityRepoPrefix, KubeVirtUtilityVersionTag),
+					Image:   fmt.Sprintf("%s/vm-killer:%s", KubeVirtRepoPrefix, KubeVirtVersionTag),
 					Command: cmd,
 					Args:    args,
 					SecurityContext: &k8sv1.SecurityContext{
@@ -2303,9 +2266,9 @@ const (
 func ContainerDiskFor(name ContainerDisk) string {
 	switch name {
 	case ContainerDiskCirros, ContainerDiskAlpine, ContainerDiskFedora:
-		return fmt.Sprintf("%s/%s-container-disk-demo:%s", KubeVirtUtilityRepoPrefix, name, KubeVirtUtilityVersionTag)
+		return fmt.Sprintf("%s/%s-container-disk-demo:%s", KubeVirtRepoPrefix, name, KubeVirtVersionTag)
 	case ContainerDiskVirtio:
-		return fmt.Sprintf("%s/virtio-container-disk:%s", KubeVirtUtilityRepoPrefix, KubeVirtUtilityVersionTag)
+		return fmt.Sprintf("%s/virtio-container-disk:%s", KubeVirtRepoPrefix, KubeVirtVersionTag)
 	}
 	panic(fmt.Sprintf("Unsupported registry disk %s", name))
 }
@@ -2884,7 +2847,7 @@ func RemoveHostDiskImage(diskPath string, nodeName string) {
 func CreateISCSITargetPOD(containerDiskName ContainerDisk) (iscsiTargetIP string) {
 	virtClient, err := kubecli.GetKubevirtClient()
 	PanicOnError(err)
-	image := fmt.Sprintf("%s/cdi-http-import-server:%s", KubeVirtUtilityRepoPrefix, KubeVirtUtilityVersionTag)
+	image := fmt.Sprintf("%s/cdi-http-import-server:%s", KubeVirtRepoPrefix, KubeVirtVersionTag)
 	resources := k8sv1.ResourceRequirements{}
 	resources.Limits = make(k8sv1.ResourceList)
 	resources.Limits[k8sv1.ResourceMemory] = resource.MustParse("64M")
@@ -3580,23 +3543,4 @@ func ForwardPorts(pod *k8sv1.Pod, ports []string, stop chan struct{}, readyTimeo
 	case <-time.After(readyTimeout):
 		return fmt.Errorf("failed to forward ports, timed out")
 	}
-}
-
-func GenerateHelloWorldServer(vmi *v1.VirtualMachineInstance, testPort int, protocol string) {
-	expecter, err := LoggedInCirrosExpecter(vmi)
-	Expect(err).ToNot(HaveOccurred())
-	defer expecter.Close()
-
-	serverCommand := fmt.Sprintf("screen -d -m sudo nc -klp %d -e echo -e 'Hello World!'\n", testPort)
-	if protocol == "udp" {
-		// nc has to be in a while loop in case of UDP, since it exists after one message
-		serverCommand = fmt.Sprintf("screen -d -m sh -c \"while true\n do nc -uklp %d -e echo -e 'Hello UDP World!'\ndone\n\"\n", testPort)
-	}
-	_, err = expecter.ExpectBatch([]expect.Batcher{
-		&expect.BSnd{S: serverCommand},
-		&expect.BExp{R: "\\$ "},
-		&expect.BSnd{S: "echo $?\n"},
-		&expect.BExp{R: "0"},
-	}, 60*time.Second)
-	Expect(err).ToNot(HaveOccurred())
 }

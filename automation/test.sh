@@ -31,7 +31,6 @@ set -ex
 export WORKSPACE="${WORKSPACE:-$PWD}"
 readonly ARTIFACTS_PATH="${ARTIFACTS-$WORKSPACE/exported-artifacts}"
 readonly TEMPLATES_SERVER="https://templates.ovirt.org/kubevirt/"
-readonly BAZEL_CACHE="${BAZEL_CACHE:-http://bazel-cache.kubevirt-prow.svc.cluster.local:8080/kubevirt.io/kubevirt}"
 
 if [[ $TARGET =~ windows.* ]]; then
   export KUBEVIRT_PROVIDER="k8s-1.11.0"
@@ -39,7 +38,7 @@ else
   export KUBEVIRT_PROVIDER=$TARGET
 fi
 
-if [ ! -d "cluster-up/cluster/$KUBEVIRT_PROVIDER" ]; then
+if [ ! -d "cluster/$KUBEVIRT_PROVIDER" ]; then
   echo "The cluster provider $KUBEVIRT_PROVIDER does not exist"
   exit 1
 fi
@@ -139,7 +138,7 @@ if [[ $TARGET =~ windows.* ]]; then
   safe_download "$WINDOWS_LOCK_PATH" "$win_image_url" "$win_image" || exit 1
 fi
 
-kubectl() { cluster-up/kubectl.sh "$@"; }
+kubectl() { cluster/kubectl.sh "$@"; }
 
 export NAMESPACE="${NAMESPACE:-kubevirt}"
 
@@ -159,8 +158,7 @@ make cluster-down
 cat >.bazelrc <<EOF
 startup --host_jvm_args=-Dbazel.DigestFunction=sha256
 build --remote_local_fallback
-build --remote_http_cache=${BAZEL_CACHE}
-build --jobs=4
+build --remote_http_cache=http://bazel-cache.kubevirt-prow.svc.cluster.local:8080/kubevirt.io/kubevirt
 EOF
 
 # build all images with the basic repeat logic

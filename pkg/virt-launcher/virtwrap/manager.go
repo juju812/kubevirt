@@ -53,6 +53,7 @@ import (
 	hostdisk "kubevirt.io/kubevirt/pkg/host-disk"
 	"kubevirt.io/kubevirt/pkg/ignition"
 	"kubevirt.io/kubevirt/pkg/log"
+	"kubevirt.io/kubevirt/pkg/util/net/dns"
 	migrationproxy "kubevirt.io/kubevirt/pkg/virt-handler/migration-proxy"
 	"kubevirt.io/kubevirt/pkg/virt-launcher/virtwrap/api"
 	"kubevirt.io/kubevirt/pkg/virt-launcher/virtwrap/cli"
@@ -282,8 +283,7 @@ func classifyVolumesForMigration(vmi *v1.VirtualMachineInstance) *migrationDisks
 			disks.shared[volume.Name] = true
 		}
 		if volSrc.ConfigMap != nil || volSrc.Secret != nil ||
-			volSrc.ServiceAccount != nil || volSrc.CloudInitNoCloud != nil ||
-			volSrc.CloudInitConfigDrive != nil {
+			volSrc.ServiceAccount != nil || volSrc.CloudInitNoCloud != nil {
 			disks.generated[volume.Name] = true
 		}
 	}
@@ -694,10 +694,7 @@ func (l *LibvirtDomainManager) preStartHook(vmi *v1.VirtualMachineInstance, doma
 	}
 
 	// generate cloud-init data
-	cloudInitData, err := cloudinit.ReadCloudInitVolumeDataSource(vmi)
-	if err != nil {
-		return domain, fmt.Errorf("PreCloudInitIso hook failed: %v", err)
-	}
+	cloudInitData := cloudinit.GetCloudInitNoCloudSource(vmi)
 
 	// Pass cloud-init data to PreCloudInitIso hook
 	logger.Info("Starting PreCloudInitIso hook")
@@ -708,7 +705,9 @@ func (l *LibvirtDomainManager) preStartHook(vmi *v1.VirtualMachineInstance, doma
 	}
 
 	if cloudInitData != nil {
-		err := cloudinit.GenerateLocalData(vmi.Name, vmi.Namespace, cloudInitData)
+		hostname := dns.SanitizeHostname(vmi)
+
+		err := cloudinit.GenerateLocalData(vmi.Name, hostname, vmi.Namespace, cloudInitData)
 		if err != nil {
 			return domain, fmt.Errorf("generating local cloud-init data failed: %v", err)
 		}

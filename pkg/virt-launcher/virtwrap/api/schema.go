@@ -323,10 +323,17 @@ type HostDevice struct {
 	Type      string           `xml:"type,attr"`
 	BootOrder *BootOrder       `xml:"boot,omitempty"`
 	Managed   string           `xml:"managed,attr"`
+	Alias     *Alias           `xml:"alias,omitempty"`
+	Driver    HostDeviceDriver `xml:"driver,omitempty"`
+	Address   *Address         `xml:"address,omitempty"`
 }
 
 type HostDeviceSource struct {
 	Address *Address `xml:"address,omitempty"`
+}
+
+type HostDeviceDriver struct {
+	Name string `xml:"name,attr"`
 }
 
 // END HostDevice -----------------------------

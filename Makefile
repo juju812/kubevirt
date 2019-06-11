@@ -2,7 +2,7 @@ export GO15VENDOREXPERIMENT := 1
 
 
 all:
-	hack/dockerized "DOCKER_PREFIX=${DOCKER_PREFIX} DOCKER_TAG=${DOCKER_TAG} IMAGE_PULL_POLICY=${IMAGE_PULL_POLICY} VERBOSITY=${VERBOSITY} ./hack/build-manifests.sh && \
+	bash -x hack/dockerized "DOCKER_PREFIX=${DOCKER_PREFIX} DOCKER_TAG=${DOCKER_TAG} IMAGE_PULL_POLICY=${IMAGE_PULL_POLICY} VERBOSITY=${VERBOSITY} ./hack/build-manifests.sh && \
 	    hack/bazel-fmt.sh && hack/bazel-build.sh"
 
 go-all:
@@ -98,19 +98,19 @@ release-announce: .release-functest
 	./hack/release-announce.sh $(RELREF) $(PREREF)
 
 cluster-up:
-	./cluster-up/up.sh
+	./cluster/up.sh
 
 cluster-down:
-	./cluster-up/down.sh
+	./cluster/down.sh
 
 cluster-build:
-	./hack/cluster-build.sh
+	./cluster/build.sh
 
 cluster-clean:
-	./hack/cluster-clean.sh
+	./cluster/clean.sh
 
 cluster-deploy: cluster-clean
-	./hack/cluster-deploy.sh
+	./cluster/deploy.sh
 
 cluster-sync: cluster-build cluster-deploy
 

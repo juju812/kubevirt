@@ -225,8 +225,8 @@ func Convert_v1_Volume_To_api_Disk(source *v1.Volume, disk *Disk, c *ConverterCo
 		return Convert_v1_ContainerDiskSource_To_api_Disk(source.Name, source.ContainerDisk, disk, c)
 	}
 
-	if source.CloudInitNoCloud != nil || source.CloudInitConfigDrive != nil {
-		return Convert_v1_CloudInitSource_To_api_Disk(source.VolumeSource, disk, c)
+	if source.CloudInitNoCloud != nil {
+		return Convert_v1_CloudInitNoCloudSource_To_api_Disk(source.CloudInitNoCloud, disk, c)
 	}
 
 	if source.HostDisk != nil {
@@ -317,21 +317,12 @@ func Convert_v1_HostDisk_To_api_Disk(path string, disk *Disk, c *ConverterContex
 	return nil
 }
 
-func Convert_v1_CloudInitSource_To_api_Disk(source v1.VolumeSource, disk *Disk, c *ConverterContext) error {
+func Convert_v1_CloudInitNoCloudSource_To_api_Disk(source *v1.CloudInitNoCloudSource, disk *Disk, c *ConverterContext) error {
 	if disk.Type == "lun" {
 		return fmt.Errorf("device %s is of type lun. Not compatible with a file based disk", disk.Alias.Name)
 	}
 
-	var dataSource cloudinit.DataSourceType
-	if source.CloudInitNoCloud != nil {
-		dataSource = cloudinit.DataSourceNoCloud
-	} else if source.CloudInitConfigDrive != nil {
-		dataSource = cloudinit.DataSourceConfigDrive
-	} else {
-		return fmt.Errorf("Only nocloud and configdrive are valid cloud-init volumes")
-	}
-
-	disk.Source.File = cloudinit.GetIsoFilePath(dataSource, c.VirtualMachine.Name, c.VirtualMachine.Namespace)
+	disk.Source.File = fmt.Sprintf("%s/%s", cloudinit.GetDomainBasePath(c.VirtualMachine.Name, c.VirtualMachine.Namespace), cloudinit.NoCloudFile)
 	disk.Type = "file"
 	disk.Driver.Type = "raw"
 	return nil
@@ -564,6 +555,52 @@ func Convert_v1_FeatureHyperv_To_api_FeatureHyperv(source *v1.FeatureHyperv, hyp
 	hyperv.TLBFlush = convertFeatureState(source.TLBFlush)
 	hyperv.IPI = convertFeatureState(source.IPI)
 	hyperv.EVMCS = convertFeatureState(source.EVMCS)
+	return nil
+}
+
+func Convert_v1_HostDevice_To_api_HostDevice(hostDevice *v1.HostDevice, hostDev *HostDevice) error {
+	hostDev.Alias = &Alias{Name: hostDevice.Name}
+	pciAddr := hostDevice.Source.PciAddress
+	dbsfFields, err := util.ParsePciAddress(pciAddr)
+	if err != nil {
+		return err
+	}
+
+	hostDev.Source = HostDeviceSource{
+		Address: &Address{
+			Type:     "pci",
+			Domain:   "0x" + dbsfFields[0],
+			Bus:      "0x" + dbsfFields[1],
+			Slot:     "0x" + dbsfFields[2],
+			Function: "0x" + dbsfFields[3],
+		},
+	}
+	hostDev.Type = hostDevice.Type
+	hostDev.Managed = "yes"
+
+	if hostDevice.BootOrder != nil {
+		hostDev.BootOrder = &BootOrder{Order: *hostDevice.BootOrder}
+	}
+
+	if hostDevice.Driver != "" {
+		hostDev.Driver = HostDeviceDriver{Name: hostDevice.Driver}
+	}
+
+	if hostDevice.PciAddress != "" {
+		pciAddr := hostDevice.PciAddress
+		dbsfFields, err := util.ParsePciAddress(pciAddr)
+		if err != nil {
+			return err
+		}
+
+		hostDev.Address = &Address{
+			Type:     "pci",
+			Domain:   "0x" + dbsfFields[0],
+			Bus:      "0x" + dbsfFields[1],
+			Slot:     "0x" + dbsfFields[2],
+			Function: "0x" + dbsfFields[3],
+		}
+	}
 	return nil
 }
 
@@ -1150,6 +1187,15 @@ func Convert_v1_VirtualMachine_To_api_Domain(vmi *v1.VirtualMachineInstance, dom
 		domain.Spec.QEMUCmd.QEMUArg = append(domain.Spec.QEMUCmd.QEMUArg, Arg{Value: "-fw_cfg"})
 		ignitionpath := fmt.Sprintf("%s/data.ign", ignition.GetDomainBasePath(c.VirtualMachine.Name, c.VirtualMachine.Namespace))
 		domain.Spec.QEMUCmd.QEMUArg = append(domain.Spec.QEMUCmd.QEMUArg, Arg{Value: fmt.Sprintf("name=opt/com.coreos/config,file=%s", ignitionpath)})
+	}
+
+	for _, hostDevice := range vmi.Spec.Domain.Devices.HostDevices {
+		newHostDev := HostDevice{}
+		err := Convert_v1_HostDevice_To_api_HostDevice(&hostDevice, &newHostDev)
+		if err != nil {
+			return err
+		}
+		domain.Spec.Devices.HostDevices = append(domain.Spec.Devices.HostDevices, newHostDev)
 	}
 	return nil
 }

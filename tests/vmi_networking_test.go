@@ -105,7 +105,7 @@ var _ = Describe("[rfe_id:694][crit:medium][vendor:cnv-qe@redhat.com][level:comp
 		ExpectWithOffset(1, strings.TrimSpace(output)).To(Equal(expectedValue))
 	}
 
-	Describe("Multiple virtual machines connectivity using bridge binding interface", func() {
+	Describe("Multiple virtual machines connectivity", func() {
 		tests.BeforeAll(func() {
 			tests.BeforeTestCleanup()
 
@@ -116,29 +116,18 @@ var _ = Describe("[rfe_id:694][crit:medium][vendor:cnv-qe@redhat.com][level:comp
 			inboundVMI.Labels = map[string]string{"expose": "me"}
 			inboundVMI.Spec.Subdomain = "myvmi"
 			inboundVMI.Spec.Hostname = "my-subdomain"
-			// Remove the masquerade interface to use the default bridge one
-			inboundVMI.Spec.Domain.Devices.Interfaces = nil
-			inboundVMI.Spec.Networks = nil
+			Expect(inboundVMI.Spec.Domain.Devices.Interfaces).To(BeEmpty())
 
 			// outboundVMI is used to connect to other vms
 			outboundVMI = tests.NewRandomVMIWithEphemeralDiskAndUserdata(tests.ContainerDiskFor(tests.ContainerDiskCirros), "#!/bin/bash\necho 'hello'\n")
-			// Remove the masquerade interface to use the default bridge one
-			outboundVMI.Spec.Domain.Devices.Interfaces = nil
-			outboundVMI.Spec.Networks = nil
 
 			// inboudnVMIWithPodNetworkSet adds itself in an explicit fashion to the pod network
 			inboundVMIWithPodNetworkSet = tests.NewRandomVMIWithEphemeralDiskAndUserdata(tests.ContainerDiskFor(tests.ContainerDiskCirros), "#!/bin/bash\necho 'hello'\n")
-			// Remove the masquerade interface to use the default bridge one
-			inboundVMIWithPodNetworkSet.Spec.Domain.Devices.Interfaces = nil
-			inboundVMIWithPodNetworkSet.Spec.Networks = nil
 			v1.SetDefaults_NetworkInterface(inboundVMIWithPodNetworkSet)
 			Expect(inboundVMIWithPodNetworkSet.Spec.Domain.Devices.Interfaces).NotTo(BeEmpty())
 
 			// inboundVMIWithCustomMacAddress specifies a custom MAC address
 			inboundVMIWithCustomMacAddress = tests.NewRandomVMIWithEphemeralDiskAndUserdata(tests.ContainerDiskFor(tests.ContainerDiskCirros), "#!/bin/bash\necho 'hello'\n")
-			// Remove the masquerade interface to use the default bridge one
-			inboundVMIWithCustomMacAddress.Spec.Domain.Devices.Interfaces = nil
-			inboundVMIWithCustomMacAddress.Spec.Networks = nil
 			v1.SetDefaults_NetworkInterface(inboundVMIWithCustomMacAddress)
 			Expect(inboundVMIWithCustomMacAddress.Spec.Domain.Devices.Interfaces).NotTo(BeEmpty())
 			inboundVMIWithCustomMacAddress.Spec.Domain.Devices.Interfaces[0].MacAddress = "de:ad:00:00:be:af"
@@ -489,9 +478,6 @@ var _ = Describe("[rfe_id:694][crit:medium][vendor:cnv-qe@redhat.com][level:comp
 			By("checking loopback is the only guest interface")
 			autoAttach := false
 			detachedVMI := tests.NewRandomVMIWithEphemeralDiskAndUserdata(tests.ContainerDiskFor(tests.ContainerDiskCirros), "#!/bin/bash\necho 'hello'\n")
-			// Remove the masquerade interface to use the default bridge one
-			detachedVMI.Spec.Domain.Devices.Interfaces = nil
-			detachedVMI.Spec.Networks = nil
 			detachedVMI.Spec.Domain.Devices.AutoattachPodInterface = &autoAttach
 
 			_, err = virtClient.VirtualMachineInstance(tests.NamespaceTestDefault).Create(detachedVMI)
@@ -511,9 +497,7 @@ var _ = Describe("[rfe_id:694][crit:medium][vendor:cnv-qe@redhat.com][level:comp
 			By("Creating random VirtualMachineInstance")
 			autoAttach := false
 			vmi := tests.NewRandomVMIWithEphemeralDisk(tests.ContainerDiskFor(tests.ContainerDiskAlpine))
-			// Remove the masquerade interface to use the default bridge one
-			vmi.Spec.Domain.Devices.Interfaces = nil
-			vmi.Spec.Networks = nil
+
 			vmi.Spec.Domain.Devices.AutoattachPodInterface = &autoAttach
 
 			_, err = virtClient.VirtualMachineInstance(tests.NamespaceTestDefault).Create(vmi)
@@ -591,9 +575,6 @@ var _ = Describe("[rfe_id:694][crit:medium][vendor:cnv-qe@redhat.com][level:comp
 		It("[test_id:1777]should disable learning on pod iface", func() {
 			By("checking learning flag")
 			learningDisabledVMI := tests.NewRandomVMIWithEphemeralDiskAndUserdata(tests.ContainerDiskFor(tests.ContainerDiskAlpine), "#!/bin/bash\necho 'hello'\n")
-			// Remove the masquerade interface to use the default bridge one
-			learningDisabledVMI.Spec.Domain.Devices.Interfaces = nil
-			learningDisabledVMI.Spec.Networks = nil
 			_, err = virtClient.VirtualMachineInstance(tests.NamespaceTestDefault).Create(learningDisabledVMI)
 			Expect(err).ToNot(HaveOccurred())
 
@@ -693,21 +674,22 @@ var _ = Describe("[rfe_id:694][crit:medium][vendor:cnv-qe@redhat.com][level:comp
 			return vmi
 		}
 
-		table.DescribeTable("[test_id:1780]should allow regular network connection", func(ports []v1.Port) {
-			// Create the client only one time
-			if clientVMI == nil {
-				clientVMI = masqueradeVMI(tests.ContainerDiskFor(tests.ContainerDiskCirros), "#!/bin/bash\necho 'hello'\n", []v1.Port{})
-				_, err = virtClient.VirtualMachineInstance(tests.NamespaceTestDefault).Create(clientVMI)
-				Expect(err).ToNot(HaveOccurred())
-				tests.WaitUntilVMIReady(clientVMI, tests.LoggedInCirrosExpecter)
-			}
-
+		It("[test_id:1780]should allow regular network connection", func() {
+			By("creating two virtual machines")
+			ports := []v1.Port{{Name: "http", Port: 8080}}
 			serverVMI = masqueradeVMI(tests.ContainerDiskFor(tests.ContainerDiskCirros), "#!/bin/bash\necho 'hello'\n", ports)
 			serverVMI.Labels = map[string]string{"expose": "server"}
 			_, err = virtClient.VirtualMachineInstance(tests.NamespaceTestDefault).Create(serverVMI)
 			Expect(err).ToNot(HaveOccurred())
 
+			clientVMI = masqueradeVMI(tests.ContainerDiskFor(tests.ContainerDiskCirros), "#!/bin/bash\necho 'hello'\n", []v1.Port{})
+			_, err = virtClient.VirtualMachineInstance(tests.NamespaceTestDefault).Create(clientVMI)
+			Expect(err).ToNot(HaveOccurred())
+
+			By("waiting for the virtual machines to become ready")
+
 			tests.WaitUntilVMIReady(serverVMI, tests.LoggedInCirrosExpecter)
+			tests.WaitUntilVMIReady(clientVMI, tests.LoggedInCirrosExpecter)
 
 			serverVMI, err = virtClient.VirtualMachineInstance(tests.NamespaceTestDefault).Get(serverVMI.Name, &v13.GetOptions{})
 			Expect(err).ToNot(HaveOccurred())
@@ -749,13 +731,7 @@ var _ = Describe("[rfe_id:694][crit:medium][vendor:cnv-qe@redhat.com][level:comp
 				&expect.BExp{R: "1"},
 			}, 30)
 			Expect(err).ToNot(HaveOccurred())
-
-			err = virtClient.VirtualMachineInstance(tests.NamespaceTestDefault).Delete(serverVMI.Name, &v13.DeleteOptions{})
-			Expect(err).ToNot(HaveOccurred())
-
-		}, table.Entry("with a specific port number", []v1.Port{{Name: "http", Port: 8080}}),
-			table.Entry("without a specific port number", []v1.Port{}),
-		)
+		})
 	})
 
 	Context("VirtualMachineInstance with TX offload disabled", func() {

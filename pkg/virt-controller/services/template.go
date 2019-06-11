@@ -98,6 +98,10 @@ func isSRIOVVmi(vmi *v1.VirtualMachineInstance) bool {
 	return false
 }
 
+func isPCIPassthroughVmi(vmi *v1.VirtualMachineInstance) bool {
+	return len(vmi.Spec.Domain.Devices.HostDevices) != 0
+}
+
 func isFeatureStateEnabled(fs *v1.FeatureState) bool {
 	return fs != nil && fs.Enabled != nil && *fs.Enabled
 }
@@ -340,7 +344,7 @@ func (t *templateService) RenderLaunchManifest(vmi *v1.VirtualMachineInstance) (
 		MountPath: "/var/run/libvirt",
 	})
 
-	if isSRIOVVmi(vmi) {
+	if isSRIOVVmi(vmi) || isPCIPassthroughVmi(vmi) {
 		// libvirt needs this volume to unbind the device from kernel
 		// driver, and register it with vfio userspace driver
 		volumeMounts = append(volumeMounts, k8sv1.VolumeMount{

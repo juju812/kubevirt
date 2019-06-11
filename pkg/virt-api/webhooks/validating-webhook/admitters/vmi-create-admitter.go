@@ -1199,9 +1199,6 @@ func validateVolumes(field *k8sfield.Path, volumes []v1.Volume, config *virtconf
 		if volume.CloudInitNoCloud != nil {
 			volumeSourceSetCount++
 		}
-		if volume.CloudInitConfigDrive != nil {
-			volumeSourceSetCount++
-		}
 		if volume.ContainerDisk != nil {
 			volumeSourceSetCount++
 		}
@@ -1252,101 +1249,82 @@ func validateVolumes(field *k8sfield.Path, volumes []v1.Volume, config *virtconf
 		}
 
 		// Verify cloud init data is within size limits
-		if volume.CloudInitNoCloud != nil || volume.CloudInitConfigDrive != nil {
-			var userDataSecretRef, networkDataSecretRef *k8sv1.LocalObjectReference
-			var dataSourceType, userData, userDataBase64, networkData, networkDataBase64 string
-			if volume.CloudInitNoCloud != nil {
-				dataSourceType = "cloudInitNoCloud"
-				userDataSecretRef = volume.CloudInitNoCloud.UserDataSecretRef
-				userDataBase64 = volume.CloudInitNoCloud.UserDataBase64
-				userData = volume.CloudInitNoCloud.UserData
-				networkDataSecretRef = volume.CloudInitNoCloud.NetworkDataSecretRef
-				networkDataBase64 = volume.CloudInitNoCloud.NetworkDataBase64
-				networkData = volume.CloudInitNoCloud.NetworkData
-			} else if volume.CloudInitConfigDrive != nil {
-				dataSourceType = "cloudInitConfigDrive"
-				userDataSecretRef = volume.CloudInitConfigDrive.UserDataSecretRef
-				userDataBase64 = volume.CloudInitConfigDrive.UserDataBase64
-				userData = volume.CloudInitConfigDrive.UserData
-				networkDataSecretRef = volume.CloudInitConfigDrive.NetworkDataSecretRef
-				networkDataBase64 = volume.CloudInitConfigDrive.NetworkDataBase64
-				networkData = volume.CloudInitConfigDrive.NetworkData
-			}
-
+		if volume.CloudInitNoCloud != nil {
+			noCloud := volume.CloudInitNoCloud
 			userDataLen := 0
 			userDataSourceCount := 0
 			networkDataLen := 0
 			networkDataSourceCount := 0
 
-			if userDataSecretRef != nil && userDataSecretRef.Name != "" {
+			if noCloud.UserDataSecretRef != nil && noCloud.UserDataSecretRef.Name != "" {
 				userDataSourceCount++
 			}
-			if userDataBase64 != "" {
+			if noCloud.UserDataBase64 != "" {
 				userDataSourceCount++
-				userData, err := base64.StdEncoding.DecodeString(userDataBase64)
+				userData, err := base64.StdEncoding.DecodeString(noCloud.UserDataBase64)
 				if err != nil {
 					causes = append(causes, metav1.StatusCause{
 						Type:    metav1.CauseTypeFieldValueInvalid,
-						Message: fmt.Sprintf("%s.%s.userDataBase64 is not a valid base64 value.", field.Index(idx).Child(dataSourceType, "userDataBase64").String(), dataSourceType),
-						Field:   field.Index(idx).Child(dataSourceType, "userDataBase64").String(),
+						Message: fmt.Sprintf("%s.cloudInitNoCloud.userDataBase64 is not a valid base64 value.", field.Index(idx).Child("cloudInitNoCloud", "userDataBase64").String()),
+						Field:   field.Index(idx).Child("cloudInitNoCloud", "userDataBase64").String(),
 					})
 				}
 				userDataLen = len(userData)
 			}
-			if userData != "" {
+			if noCloud.UserData != "" {
 				userDataSourceCount++
-				userDataLen = len(userData)
+				userDataLen = len(noCloud.UserData)
 			}
 
 			if userDataSourceCount != 1 {
 				causes = append(causes, metav1.StatusCause{
 					Type:    metav1.CauseTypeFieldValueInvalid,
-					Message: fmt.Sprintf("%s must have one exactly one userdata source set.", field.Index(idx).Child(dataSourceType).String()),
-					Field:   field.Index(idx).Child(dataSourceType).String(),
+					Message: fmt.Sprintf("%s must have one exactly one userdata source set.", field.Index(idx).Child("cloudInitNoCloud").String()),
+					Field:   field.Index(idx).Child("cloudInitNoCloud").String(),
 				})
 			}
 
 			if userDataLen > cloudInitUserMaxLen {
 				causes = append(causes, metav1.StatusCause{
 					Type:    metav1.CauseTypeFieldValueInvalid,
-					Message: fmt.Sprintf("%s userdata exceeds %d byte limit", field.Index(idx).Child(dataSourceType).String(), cloudInitUserMaxLen),
-					Field:   field.Index(idx).Child(dataSourceType).String(),
+					Message: fmt.Sprintf("%s userdata exceeds %d byte limit", field.Index(idx).Child("cloudInitNoCloud").String(), cloudInitUserMaxLen),
+					Field:   field.Index(idx).Child("cloudInitNoCloud").String(),
 				})
 			}
 
-			if networkDataSecretRef != nil && networkDataSecretRef.Name != "" {
+			if noCloud.NetworkDataSecretRef != nil && noCloud.NetworkDataSecretRef.Name != "" {
 				networkDataSourceCount++
 			}
-			if networkDataBase64 != "" {
+			if noCloud.NetworkDataBase64 != "" {
 				networkDataSourceCount++
-				networkData, err := base64.StdEncoding.DecodeString(networkDataBase64)
+				networkData, err := base64.StdEncoding.DecodeString(noCloud.NetworkDataBase64)
 				if err != nil {
 					causes = append(causes, metav1.StatusCause{
 						Type:    metav1.CauseTypeFieldValueInvalid,
-						Message: fmt.Sprintf("%s.%s.networkDataBase64 is not a valid base64 value.", field.Index(idx).Child(dataSourceType, "networkDataBase64").String(), dataSourceType),
-						Field:   field.Index(idx).Child(dataSourceType, "networkDataBase64").String(),
+						Message: fmt.Sprintf("%s.cloudInitNoCloud.networkDataBase64 is not a valid base64 value.", field.Index(idx).Child("cloudInitNoCloud", "networkDataBase64").String()),
+						Field:   field.Index(idx).Child("cloudInitNoCloud", "networkDataBase64").String(),
 					})
 				}
 				networkDataLen = len(networkData)
 			}
-			if networkData != "" {
+			if noCloud.NetworkData != "" {
 				networkDataSourceCount++
-				networkDataLen = len(networkData)
+				networkDataLen = len(noCloud.NetworkData)
 			}
 
 			if networkDataSourceCount > 1 {
 				causes = append(causes, metav1.StatusCause{
 					Type:    metav1.CauseTypeFieldValueInvalid,
-					Message: fmt.Sprintf("%s must have only one networkdata source set.", field.Index(idx).Child(dataSourceType).String()),
-					Field:   field.Index(idx).Child(dataSourceType).String(),
+					Message: fmt.Sprintf("%s must have only one networkdata source set.", field.Index(idx).Child("cloudInitNoCloud").String()),
+					Field:   field.Index(idx).Child("cloudInitNoCloud").String(),
 				})
 			}
 
 			if networkDataLen > cloudInitNetworkMaxLen {
 				causes = append(causes, metav1.StatusCause{
 					Type:    metav1.CauseTypeFieldValueInvalid,
-					Message: fmt.Sprintf("%s networkdata exceeds %d byte limit", field.Index(idx).Child(dataSourceType).String(), cloudInitNetworkMaxLen),
-					Field:   field.Index(idx).Child(dataSourceType).String(),
+					Message: fmt.Sprintf("%s networkdata exceeds %d byte limit", field.Index(idx).Child("cloudInitNoCloud").String(), cloudInitNetworkMaxLen),
+					Field:   field.Index(idx).Child("cloudInitNoCloud").String(),
 				})
 			}
 		}

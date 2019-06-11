@@ -46,18 +46,6 @@ func (CloudInitNoCloudSource) SwaggerDoc() map[string]string {
 	}
 }
 
-func (CloudInitConfigDriveSource) SwaggerDoc() map[string]string {
-	return map[string]string{
-		"":                     "Represents a cloud-init config drive user data source.\nMore info: https://cloudinit.readthedocs.io/en/latest/topics/datasources/configdrive.html",
-		"secretRef":            "UserDataSecretRef references a k8s secret that contains config drive userdata.\n+ optional",
-		"userDataBase64":       "UserDataBase64 contains config drive cloud-init userdata as a base64 encoded string.\n+ optional",
-		"userData":             "UserData contains config drive inline cloud-init userdata.\n+ optional",
-		"networkDataSecretRef": "NetworkDataSecretRef references a k8s secret that contains config drive networkdata.\n+ optional",
-		"networkDataBase64":    "NetworkDataBase64 contains config drive cloud-init networkdata as a base64 encoded string.\n+ optional",
-		"networkData":          "NetworkData contains config drive inline cloud-init networkdata.\n+ optional",
-	}
-}
-
 func (DomainSpec) SwaggerDoc() map[string]string {
 	return map[string]string{
 		"resources":       "Resources describes the Compute Resources required by this vmi.",
@@ -160,7 +148,19 @@ func (Devices) SwaggerDoc() map[string]string {
 		"rng":                        "Whether to have random number generator from host\n+optional",
 		"blockMultiQueue":            "Whether or not to enable virtio multi-queue for block devices\n+optional",
 		"networkInterfaceMultiqueue": "If specified, virtual network interfaces configured with a virtio bus will also enable the vhost multiqueue feature\n+optional",
+		"hostDevices":                "Whether to have PCI passthrough host devices\n+optional",
 	}
+}
+
+func (HostDevice) SwaggerDoc() map[string]string {
+	return map[string]string{
+		"name":      "Name is the device name",
+		"bootOrder": "BootOrder is an integer value > 0, used to determine ordering of boot devices.\nLower values take precedence.\nEach disk or interface that has a boot order must have a unique value.\n+optional",
+	}
+}
+
+func (HostDeviceSource) SwaggerDoc() map[string]string {
+	return map[string]string{}
 }
 
 func (Input) SwaggerDoc() map[string]string {
@@ -234,7 +234,6 @@ func (VolumeSource) SwaggerDoc() map[string]string {
 		"hostDisk":              "HostDisk represents a disk created on the cluster level\n+optional",
 		"persistentVolumeClaim": "PersistentVolumeClaimVolumeSource represents a reference to a PersistentVolumeClaim in the same namespace.\nDirectly attached to the vmi via qemu.\nMore info: https://kubernetes.io/docs/concepts/storage/persistent-volumes#persistentvolumeclaims\n+optional",
 		"cloudInitNoCloud":      "CloudInitNoCloud represents a cloud-init NoCloud user-data source.\nThe NoCloud data will be added as a disk to the vmi. A proper cloud-init installation is required inside the guest.\nMore info: http://cloudinit.readthedocs.io/en/latest/topics/datasources/nocloud.html\n+optional",
-		"cloudInitConfigDrive":  "CloudInitConfigDrive represents a cloud-init Config Drive user-data source.\nThe Config Drive data will be added as a disk to the vmi. A proper cloud-init installation is required inside the guest.\nMore info: https://cloudinit.readthedocs.io/en/latest/topics/datasources/configdrive.html\n+optional",
 		"containerDisk":         "ContainerDisk references a docker image, embedding a qcow or raw disk.\nMore info: https://kubevirt.gitbooks.io/user-guide/registry-disk.html\n+optional",
 		"ephemeral":             "Ephemeral is a special volume source that \"wraps\" specified source and provides copy-on-write image on top of it.\n+optional",
 		"emptyDisk":             "EmptyDisk represents a temporary disk which shares the vmis lifecycle.\nMore info: https://kubevirt.gitbooks.io/user-guide/disks-and-volumes.html\n+optional",

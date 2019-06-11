@@ -35,4 +35,3 @@ coverage.html
 manifests/**/*.tmp
 /bazel-*
 /.bazelrc
-_ci-configs/
