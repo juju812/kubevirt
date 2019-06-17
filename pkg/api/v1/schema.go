@@ -311,9 +311,10 @@ type Devices struct {
 // +k8s:openapi-gen=true
 type HostDevice struct {
 	// Name is the device name
-	Name   string           `json:"name"`
-	Type   string           `json:"type"`
-	Source HostDeviceSource `json:"source"`
+	Name string `json:"name"`
+	// HostDeviceType specifies as host device type should be attached to the guest. Only raw PCI device and GPU is supported
+	HostDeviceType `json:",inline"`
+
 	// BootOrder is an integer value > 0, used to determine ordering of boot devices.
 	// Lower values take precedence.
 	// Each disk or interface that has a boot order must have a unique value.
@@ -323,11 +324,30 @@ type HostDevice struct {
 	PciAddress string `json:"pciAddress,omitempty"`
 }
 
+// Represents the method which host device type will be attached to the guest.
+// Only one of its members may be specified.
+// ---
+// +k8s:openapi-gen=true
+type HostDeviceType struct {
+	PCI *HostDevicePCI `json:"pci,omitempty"`
+	GPU *HostDeviceGPU `json:"gpu,omitempty"`
+}
+
+// ---
+// +k8s:openapi-gen=true
+type HostDevicePCI struct {
+	Source HostDeviceSource `json:"source"`
+}
+
 // ---
 // +k8s:openapi-gen=true
 type HostDeviceSource struct {
 	PciAddress string `json:"pciAddress"`
 }
+
+// ---
+// +k8s:openapi-gen=true
+type HostDeviceGPU struct{}
 
 // ---
 // +k8s:openapi-gen=true

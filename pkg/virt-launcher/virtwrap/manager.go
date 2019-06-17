@@ -828,6 +828,38 @@ func getSRIOVPCIAddresses(ifaces []v1.Interface) map[string][]string {
 	return networkToAddressesMap
 }
 
+func getGPUPCIAddresses(hostDevs []v1.HostDevice) map[string]string {
+	GPUToAddressesMap := map[string]string{}
+	var addrs []string
+	varName := "PCIDEVICE_DANLU_COM_GPU"
+	pciAddrString, isSet := os.LookupEnv(varName)
+
+	if isSet {
+		log.DefaultLogger().Infof("GPU device var %s is set: %s", varName, pciAddrString)
+		addrs = strings.Split(pciAddrString, ",")
+		naddrs := len(addrs)
+		if naddrs > 0 {
+			if addrs[naddrs-1] == "" {
+				addrs = addrs[:naddrs-1]
+			}
+		}
+	}
+
+	for _, hostDev := range hostDevs {
+		if hostDev.GPU == nil {
+			continue
+		}
+		if len(addrs) > 0 {
+			GPUToAddressesMap[hostDev.Name] = addrs[0]
+			addrs = addrs[1:]
+		} else {
+			log.DefaultLogger().Warningf("No more GPU PCI addresses to allocate to %s", hostDev.Name)
+			GPUToAddressesMap[hostDev.Name] = ""
+		}
+	}
+	return GPUToAddressesMap
+}
+
 func (l *LibvirtDomainManager) SyncVMI(vmi *v1.VirtualMachineInstance, useEmulation bool) (*api.DomainSpec, error) {
 	l.domainModifyLock.Lock()
 	defer l.domainModifyLock.Unlock()
@@ -862,6 +894,7 @@ func (l *LibvirtDomainManager) SyncVMI(vmi *v1.VirtualMachineInstance, useEmulat
 		CPUSet:         podCPUSet,
 		IsBlockPVC:     isBlockPVCMap,
 		SRIOVDevices:   getSRIOVPCIAddresses(vmi.Spec.Domain.Devices.Interfaces),
+		GPUDevices:     getGPUPCIAddresses(vmi.Spec.Domain.Devices.HostDevices),
 	}
 	if err := api.Convert_v1_VirtualMachine_To_api_Domain(vmi, domain, c); err != nil {
 		logger.Error("Conversion failed.")

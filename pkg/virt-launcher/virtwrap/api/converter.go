@@ -61,6 +61,7 @@ type ConverterContext struct {
 	CPUSet         []int
 	IsBlockPVC     map[string]bool
 	SRIOVDevices   map[string][]string
+	GPUDevices     map[string]string
 }
 
 func Convert_v1_Disk_To_api_Disk(diskDevice *v1.Disk, disk *Disk, devicePerBus map[string]int, numQueues *uint) error {
@@ -558,15 +559,27 @@ func Convert_v1_FeatureHyperv_To_api_FeatureHyperv(source *v1.FeatureHyperv, hyp
 	return nil
 }
 
-func Convert_v1_HostDevice_To_api_HostDevice(hostDevice *v1.HostDevice, hostDev *HostDevice) error {
-	hostDev.Alias = &Alias{Name: hostDevice.Name}
-	pciAddr := hostDevice.Source.PciAddress
+func Convert_v1_HostDevice_To_api_HostDevice(hostDevice *v1.HostDevice, xmlHostDevs []HostDevice, c *ConverterContext) error {
+	xmlHostDev := HostDevice{}
+	xmlHostDev.Alias = &Alias{Name: hostDevice.Name}
+	audioHostDeviceNeeded := false
+	var pciAddr string
+	if hostDevice.PCI != nil {
+		pciAddr = hostDevice.PCI.Source.PciAddress
+	} else if hostDevice.GPU != nil {
+		pciAddr = c.GPUDevices[hostDevice.Name]
+		if pciAddr == "" {
+			return fmt.Errorf("no more GPU PCI addresses to allocate to %s", hostDevice.Name)
+		}
+		audioHostDeviceNeeded = true
+	}
+
 	dbsfFields, err := util.ParsePciAddress(pciAddr)
 	if err != nil {
 		return err
 	}
 
-	hostDev.Source = HostDeviceSource{
+	xmlHostDev.Source = HostDeviceSource{
 		Address: &Address{
 			Type:     "pci",
 			Domain:   "0x" + dbsfFields[0],
@@ -575,15 +588,15 @@ func Convert_v1_HostDevice_To_api_HostDevice(hostDevice *v1.HostDevice, hostDev 
 			Function: "0x" + dbsfFields[3],
 		},
 	}
-	hostDev.Type = hostDevice.Type
-	hostDev.Managed = "yes"
+	xmlHostDev.Type = "pci"
+	xmlHostDev.Managed = "yes"
 
 	if hostDevice.BootOrder != nil {
-		hostDev.BootOrder = &BootOrder{Order: *hostDevice.BootOrder}
+		xmlHostDev.BootOrder = &BootOrder{Order: *hostDevice.BootOrder}
 	}
 
 	if hostDevice.Driver != "" {
-		hostDev.Driver = HostDeviceDriver{Name: hostDevice.Driver}
+		xmlHostDev.Driver = HostDeviceDriver{Name: hostDevice.Driver}
 	}
 
 	if hostDevice.PciAddress != "" {
@@ -593,7 +606,7 @@ func Convert_v1_HostDevice_To_api_HostDevice(hostDevice *v1.HostDevice, hostDev 
 			return err
 		}
 
-		hostDev.Address = &Address{
+		xmlHostDev.Address = &Address{
 			Type:     "pci",
 			Domain:   "0x" + dbsfFields[0],
 			Bus:      "0x" + dbsfFields[1],
@@ -601,6 +614,29 @@ func Convert_v1_HostDevice_To_api_HostDevice(hostDevice *v1.HostDevice, hostDev 
 			Function: "0x" + dbsfFields[3],
 		}
 	}
+
+	xmlHostDevs = append(xmlHostDevs, xmlHostDev)
+
+	// auto add GPU audio device to xmlHostDevs
+	if audioHostDeviceNeeded {
+		audioPCIaddr := strings.Replace(pciAddr, ".0", ".1", -1)
+		audioHostDevice := v1.HostDevice{
+			Name: hostDevice.Name + "AudioDev",
+			HostDeviceType: v1.HostDeviceType{
+				PCI: &v1.HostDevicePCI{
+					Source: v1.HostDeviceSource{
+						PciAddress: audioPCIaddr,
+					},
+				},
+			},
+			Driver: "vfio",
+		}
+		err := Convert_v1_HostDevice_To_api_HostDevice(&audioHostDevice, xmlHostDevs, c)
+		if err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
@@ -1190,12 +1226,15 @@ func Convert_v1_VirtualMachine_To_api_Domain(vmi *v1.VirtualMachineInstance, dom
 	}
 
 	for _, hostDevice := range vmi.Spec.Domain.Devices.HostDevices {
-		newHostDev := HostDevice{}
-		err := Convert_v1_HostDevice_To_api_HostDevice(&hostDevice, &newHostDev)
+		var newHostDevs []HostDevice
+		err := Convert_v1_HostDevice_To_api_HostDevice(&hostDevice, newHostDevs, c)
 		if err != nil {
 			return err
 		}
-		domain.Spec.Devices.HostDevices = append(domain.Spec.Devices.HostDevices, newHostDev)
+		for _, newHostDev := range newHostDevs {
+			domain.Spec.Devices.HostDevices = append(domain.Spec.Devices.HostDevices, newHostDev)
+		}
+
 	}
 	return nil
 }
