@@ -559,7 +559,7 @@ func Convert_v1_FeatureHyperv_To_api_FeatureHyperv(source *v1.FeatureHyperv, hyp
 	return nil
 }
 
-func Convert_v1_HostDevice_To_api_HostDevice(hostDevice *v1.HostDevice, xmlHostDevs []HostDevice, c *ConverterContext) error {
+func Convert_v1_HostDevice_To_api_HostDevice(hostDevice *v1.HostDevice, xmlHostDevs *[]HostDevice, c *ConverterContext) error {
 	xmlHostDev := HostDevice{}
 	xmlHostDev.Alias = &Alias{Name: hostDevice.Name}
 	audioHostDeviceNeeded := false
@@ -615,7 +615,7 @@ func Convert_v1_HostDevice_To_api_HostDevice(hostDevice *v1.HostDevice, xmlHostD
 		}
 	}
 
-	xmlHostDevs = append(xmlHostDevs, xmlHostDev)
+	*xmlHostDevs = append(*xmlHostDevs, xmlHostDev)
 
 	// auto add GPU audio device to xmlHostDevs
 	if audioHostDeviceNeeded {
@@ -1227,14 +1227,13 @@ func Convert_v1_VirtualMachine_To_api_Domain(vmi *v1.VirtualMachineInstance, dom
 
 	for _, hostDevice := range vmi.Spec.Domain.Devices.HostDevices {
 		var newHostDevs []HostDevice
-		err := Convert_v1_HostDevice_To_api_HostDevice(&hostDevice, newHostDevs, c)
+		err := Convert_v1_HostDevice_To_api_HostDevice(&hostDevice, &newHostDevs, c)
 		if err != nil {
 			return err
 		}
 		for _, newHostDev := range newHostDevs {
 			domain.Spec.Devices.HostDevices = append(domain.Spec.Devices.HostDevices, newHostDev)
 		}
-
 	}
 	return nil
 }
